@@ -21,4 +21,5 @@ config.h.in~
 lib/samtools-0.1.20/samtools
 src/pefilter/pefilter
 src/petagstats/petagstats
+src/pefilterpico/pefilterpico
 
