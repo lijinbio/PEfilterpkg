@@ -49,7 +49,8 @@ AC_CONFIG_FILES([
 	Makefile
 	lib/Makefile
 	src/Makefile
-	src/pefilter/Makefile
 	src/petagstats/Makefile
+	src/pefilter/Makefile
+	src/pefilterpico/Makefile
 	])
 AC_OUTPUT
