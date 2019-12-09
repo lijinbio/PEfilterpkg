@@ -2,9 +2,9 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([binary], [0.0.1], [lijin.abc@gmail.com])
+AC_INIT([pefilter], [0.0.1], [lijin.abc@gmail.com])
 AM_INIT_AUTOMAKE()
-AC_CONFIG_SRCDIR([src/main.cpp])
+AC_CONFIG_SRCDIR([src/pefilter/pefilter.cpp])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
