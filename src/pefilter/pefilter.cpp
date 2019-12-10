@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <iterator>
+#include <thread>
+#include <cstdio>
 #include "sam.h"
 
 using namespace boost::program_options;
@@ -101,7 +104,7 @@ static int addtag(const bam1_t *b, void *data) {
 	string qname=string((char*)bam1_qname(b));
 	string zs=string((char *)bam_aux2Z(bam_aux_get(b, "ZS")));
 	uint32_t tid=b->core.tid;
-	map< string, vector< string > > & read2tagchr=read2tag[tid]; // qname->[tag1,tag2]
+	map< string, vector< string > > &read2tagchr=read2tag[tid]; // qname->[tag1,tag2]
 	map< string, vector< string > > :: iterator it=read2tagchr.find(qname);
 	if (read2tagchr.end()!=it) {
 		if (flag & 0x40) {
@@ -121,35 +124,56 @@ static int addtag(const bam1_t *b, void *data) {
 	return 0;
 }
 
-/*
-
-// Six true PE mappings in traditional library preparation:
-set< string > validtags_trad {
-	"++,+-", "-+,--"
-		, "++,N", "N,+-"
-		, "-+,N", "N,--"
-};
-// 12 true PE mappings in Pico library preparation:
-set< string > validtags_pico {
-	"++,+-", "+-,++", "-+,--", "--,-+"
-		, "++,N", "N,++", "+-,N", "N,+-"
-		, "-+,N", "N,-+", "--,N", "N,--"
-};
-
-static int filter(const bam1_t *b, void *data) {
-	string qname=string((char*)bam1_qname(b));
-	map< string, vector< string > > :: iterator it=read2tag.find(qname);
-	// skip multiple mapping in both ends
-	if (read2tag.end()!=it) {
-		string tags=it->second[0]+","+it->second[1];
-		set< string > :: iterator sit=validtags.find(tags);
-		if (validtags.end()!=sit) {
-			samwrite((samfile_t*)data, b);
-		}
+map< string, map< string, int > > tagstats; // chr->tag->number
+void petagstatschrbatch(string bamfile, vector< string > chrs) {
+	samfile_t *in=0;
+	if ((in=samopen(bamfile.c_str(), "rb", 0))==0) {
+		cerr << "Error: not found " << bamfile << endl;
+		return;
 	}
-	return 0;
+
+	map< string, int > chr2tid;
+	for (int i=0; i<in->header->n_targets; i++) {
+		chr2tid[in->header->target_name[i]]=i;
+	}
+
+	bam_index_t *idx=0;
+	idx = bam_index_load(bamfile.c_str());
+	if (idx==0) {
+		cerr << "Error: not found index file of " << bamfile << endl;
+		return;
+	}
+	for (string &chr : chrs) {
+		cout << "Start chromosome " << chr << endl;
+		int tid, beg, end, result;
+		bam_parse_region(in->header, chr.c_str(), &tid, &beg, &end);
+		if (tid<0) { 
+			cerr << "Error: unknown reference name " << chr << endl;
+			return;
+		}
+		result=bam_fetch(in->x.bam, idx, tid, beg, end, NULL, addtag);
+		if (result<0) {
+			cerr << "Error: failed to retrieve region " << chr << endl;
+			return;
+		}
+
+		map< string, int > &tagstatschr=tagstats[chr];
+		map< string, vector< string > > &read2tagchr=read2tag[chr2tid[chr]];
+		for (map< string, vector< string > > :: iterator it=read2tagchr.begin(); read2tagchr.end()!=it; ++it) {
+			string tag=it->second[0] + "," + it->second[1];
+			map< string, int > :: iterator tit=tagstatschr.find(tag);
+			if (tagstatschr.end()!=tit) {
+				tit->second++;
+			} else {
+				tagstatschr[tag]=1;
+			}
+		}
+		read2tagchr.clear();
+		cout << "End chromosome " << chr << endl;
+	}
+	samclose(in);
+	bam_index_destroy(idx);
 }
-*/
 
 int petagstats(string bamfile)
 {
@@ -158,11 +182,96 @@ int petagstats(string bamfile)
 		cerr << "Error: not found " << bamfile << endl;
 		return 1;
 	}
-
-	map< string, int > chr2tid;
-	vector< string> chroms;
+	vector< string > chroms;
 	for (int i=0; i<in->header->n_targets; i++) {
 		chroms.push_back(in->header->target_name[i]);
+	}
+	samclose(in);
+
+	vector< vector< string > > chrbatch;
+	for (int i=0; i<chroms.size(); i++) {
+		if (i>=opts.numthreads) {
+			chrbatch[i%opts.numthreads].push_back(chroms[i]);
+		} else {
+			vector< string > chrs {chroms[i]};
+			chrbatch.push_back(chrs);
+		}
+	}
+
+	vector<thread> threads;
+	for (vector< string > &chrs : chrbatch) {
+		threads.push_back(thread(petagstatschrbatch, bamfile, chrs));
+	}
+	for (auto& th : threads) {
+		th.join();
+	}
+
+	map< string, int > tagsresult;
+	for (map< string, map< string, int > > :: iterator itchr=tagstats.begin(); tagstats.end()!=itchr; ++itchr) {
+		map< string, int > & tagstatschr=itchr->second;
+		for (map< string, int > :: iterator it=tagstatschr.begin(); tagstatschr.end()!=it; ++it) {
+			tagsresult[it->first]+=it->second;
+		}
+	}
+	for (map< string, int > :: iterator it=tagsresult.begin(); tagsresult.end()!=it; ++it) {
+		cout << it->first << "\t" << it->second << endl;
+	}
+	return 0;
+}
+
+// Six true PE mappings in traditional library preparation:
+set< string > validtags_trad {
+	"++,+-", "-+,--"
+		, "++,N", "N,+-"
+		, "-+,N", "N,--"
+};
+static int filter_trad(const bam1_t *b, void *data) {
+	string qname=string((char*)bam1_qname(b));
+	uint32_t tid=b->core.tid;
+	map< string, vector< string > > &read2tagchr=read2tag[tid];
+	map< string, vector< string > > :: iterator it=read2tagchr.find(qname);
+	// skip multiple mapping in both ends
+	if (read2tagchr.end()!=it) {
+		string tags=it->second[0]+","+it->second[1];
+		set< string > :: iterator sit=validtags_trad.find(tags);
+		if (validtags_trad.end()!=sit) {
+			samwrite((samfile_t*)data, b);
+		}
+	}
+	return 0;
+}
+// 12 true PE mappings in Pico library preparation:
+set< string > validtags_pico {
+	"++,+-", "+-,++", "-+,--", "--,-+"
+		, "++,N", "N,++", "+-,N", "N,+-"
+		, "-+,N", "N,-+", "--,N", "N,--"
+};
+static int filter_pico(const bam1_t *b, void *data) {
+	string qname=string((char*)bam1_qname(b));
+	uint32_t tid=b->core.tid;
+	map< string, vector< string > > &read2tagchr=read2tag[tid];
+	map< string, vector< string > > :: iterator it=read2tagchr.find(qname);
+	// skip multiple mapping in both ends
+	if (read2tagchr.end()!=it) {
+		string tags=it->second[0]+","+it->second[1];
+		set< string > :: iterator sit=validtags_pico.find(tags);
+		if (validtags_pico.end()!=sit) {
+			samwrite((samfile_t*)data, b);
+		}
+	}
+	return 0;
+}
+
+
+void pefilterchrbatch(string bamfile, string outfile, vector< string > chrs) {
+	samfile_t *in=0;
+	if ((in=samopen(bamfile.c_str(), "rb", 0))==0) {
+		cerr << "Error: not found " << bamfile << endl;
+		return;
+	}
+
+	map< string, int > chr2tid;
+	for (int i=0; i<in->header->n_targets; i++) {
 		chr2tid[in->header->target_name[i]]=i;
 	}
 
@@ -170,44 +279,98 @@ int petagstats(string bamfile)
 	idx = bam_index_load(bamfile.c_str());
 	if (idx==0) {
 		cerr << "Error: not found index file of " << bamfile << endl;
-		return 1;
+		return;
 	}
-
-	map< string, int > tagstats;
-	for (string &chr : chroms) {
+	for (string &chr : chrs) {
+		cout << "Start chromosome " << chr << endl;
+		string chroutfile=outfile+"_"+chr+".bam";
+		samfile_t *out=0;
+		if ((out=samopen(chroutfile.c_str(), "wb", in->header))==0) {
+			cerr << "Error: can not write " << chroutfile << endl;
+			return;
+		}
 		int tid, beg, end, result;
 		bam_parse_region(in->header, chr.c_str(), &tid, &beg, &end);
 		if (tid<0) { 
 			cerr << "Error: unknown reference name " << chr << endl;
-			continue;
+			return;
 		}
 		// 1. First scan to construct the tag directionary
 		result=bam_fetch(in->x.bam, idx, tid, beg, end, NULL, addtag);
 		if (result<0) {
-			cerr << "Error: failed to retrieve region " << bamfile << endl;
-			return 1;
+			cerr << "Error: failed to retrieve region " << chr << endl;
+			return;
 		}
-		// 2. Record the tag statistics
-		map< string, vector< string > > & read2tagchr=read2tag[chr2tid[chr]];
+		// 2. Second scan to filter false paired mapping
+		if (opts.pico) {
+			result=bam_fetch(in->x.bam, idx, tid, beg, end, out, filter_pico);
+		} else {
+			result=bam_fetch(in->x.bam, idx, tid, beg, end, out, filter_trad);
+		}
+		if (result<0) {
+			cerr << "Error: failed to filter region " << chr << endl;
+			return;
+		}
+		samclose(out);
+		// 3. Record the tag statistics
+		map< string, int > &tagstatschr=tagstats[chr];
+		map< string, vector< string > > &read2tagchr=read2tag[chr2tid[chr]];
 		for (map< string, vector< string > > :: iterator it=read2tagchr.begin(); read2tagchr.end()!=it; ++it) {
 			string tag=it->second[0] + "," + it->second[1];
-			map< string, int > :: iterator tit=tagstats.find(tag);
-			if (tagstats.end()!=tit) {
+			map< string, int > :: iterator tit=tagstatschr.find(tag);
+			if (tagstatschr.end()!=tit) {
 				tit->second++;
 			} else {
-				tagstats[tag]=1;
+				tagstatschr[tag]=1;
 			}
 		}
 		read2tagchr.clear();
+		cout << "End chromosome " << chr << endl;
 	}
 	samclose(in);
-	for (map< string, int > :: iterator it=tagstats.begin(); tagstats.end()!=it; ++it) {
-		cout << it->first << "\t" << it->second << endl;
+	bam_index_destroy(idx);
+}
+
+int mergebam(vector< string > & files, string & outfile) {
+	string cmd = "samtools merge "+outfile;
+	for (string &infile: files) {
+		cmd += " " + infile;
 	}
+	cout << cmd << endl;
+	FILE *fp;
+	char info[10240];
+	fp = popen(cmd.c_str(), "r");
+	if (fp==NULL) {
+		fprintf(stderr, "popen error.\n");
+		return EXIT_FAILURE;
+	}
+	while (fgets(info, 10240, fp) != NULL) {
+		printf("%s", info);
+	}
+	pclose(fp);
 	return 0;
 }
 
-/*
+int rmtmpfiles(vector< string > & files) {
+	string cmd = "rm -f";
+	for (string &infile: files) {
+		cmd += " " + infile;
+	}
+	cout << cmd << endl;
+	FILE *fp;
+	char info[10240];
+	fp = popen(cmd.c_str(), "r");
+	if (fp==NULL) {
+		fprintf(stderr, "popen error.\n");
+		return EXIT_FAILURE;
+	}
+	while (fgets(info, 10240, fp) != NULL) {
+		printf("%s", info);
+	}
+	pclose(fp);
+	return 0;
+}
+
 int pefilter(string bamfile, string outfile)
 {
 	samfile_t *in=0;
@@ -215,65 +378,49 @@ int pefilter(string bamfile, string outfile)
 		cerr << "Error: not found " << bamfile << endl;
 		return 1;
 	}
-
 	vector< string> chroms;
 	for (int i=0; i<in->header->n_targets; i++) {
 		chroms.push_back(in->header->target_name[i]);
 	}
-
-	samfile_t *out=0;
-	if ((out=samopen(outfile.c_str(), "wb", in->header))==0) {
-		cerr << "Error: can not write " << outfile << endl;
-		return 1;
-	}
-
-	bam_index_t *idx=0;
-	idx = bam_index_load(bamfile.c_str());
-	if (idx==0) {
-		cerr << "Error: not found index file of " << bamfile << endl;
-		return 1;
-	}
-
-	map< string, int > tagstats;
-	for (string &chr : chroms) {
-		int tid, beg, end, result;
-		bam_parse_region(in->header, chr.c_str(), &tid, &beg, &end); // parse a region in the format like `chr2:100-200'
-		if (tid<0) { 
-			cerr << "Error: unknown reference name " << chr << endl;
-			continue;
-		}
-		// 1. First scan to construct the tag directionary
-		result=bam_fetch(in->x.bam, idx, tid, beg, end, NULL, addtag);
-		if (result<0) {
-			cerr << "Error: failed to retrieve region " << bamfile << endl;
-			return 1;
-		}
-		// 2. Second scan to filter false paired mapping
-		result=bam_fetch(in->x.bam, idx, tid, beg, end, out, filter);
-		if (result<0) {
-			cerr << "Error: failed to retrieve region " << bamfile << endl;
-			return 1;
-		}
-		// 3. Record the tag statistics
-		for (map< string, vector< string > > :: iterator it=read2tag.begin(); read2tag.end()!=it; ++it) {
-			string tag=it->second[0] + "," + it->second[1];
-			map< string, int > :: iterator tit=tagstats.find(tag);
-			if (tagstats.end()!=tit) {
-				tit->second++;
-			} else {
-				tagstats[tag]=1;
-			}
-		}
-		read2tag.clear();
-	}
 	samclose(in);
-	samclose(out);
-	for (map< string, int > :: iterator it=tagstats.begin(); tagstats.end()!=it; ++it) {
+
+	vector< vector< string > > chrbatch;
+	for (int i=0; i<chroms.size(); i++) {
+		if (i>=opts.numthreads) {
+			chrbatch[i%opts.numthreads].push_back(chroms[i]);
+		} else {
+			vector< string > chrs {chroms[i]};
+			chrbatch.push_back(chrs);
+		}
+	}
+
+	vector<thread> threads;
+	for (vector< string > &chrs : chrbatch) {
+		threads.push_back(thread(pefilterchrbatch, bamfile, outfile, chrs));
+	}
+	for (auto& th : threads) {
+		th.join();
+	}
+
+	vector< string > tmpfiles;
+	for (string &chr: chroms) {
+		tmpfiles.push_back(outfile+"_"+chr+".bam");
+	}
+	mergebam(tmpfiles, outfile);
+	rmtmpfiles(tmpfiles);
+
+	map< string, int > tagsresult;
+	for (map< string, map< string, int > > :: iterator itchr=tagstats.begin(); tagstats.end()!=itchr; ++itchr) {
+		map< string, int > & tagstatschr=itchr->second;
+		for (map< string, int > :: iterator it=tagstatschr.begin(); tagstatschr.end()!=it; ++it) {
+			tagsresult[it->first]+=it->second;
+		}
+	}
+	for (map< string, int > :: iterator it=tagsresult.begin(); tagsresult.end()!=it; ++it) {
 		cout << it->first << "\t" << it->second << endl;
 	}
 	return 0;
 }
-*/
 
 int main(int argc, const char ** argv)
 {
@@ -281,7 +428,7 @@ int main(int argc, const char ** argv)
 	if (opts.statsonly) {
 		petagstats(opts.infile);
 	} else {
-		// pefilter(opts.infile, opts.outfile);
+		pefilter(opts.infile, opts.outfile);
 	}
 	return 0;
 }
