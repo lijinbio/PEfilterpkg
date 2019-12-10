@@ -1,1 +1,1 @@
-SUBDIRS = petagstats pefilter pefilterpico
+SUBDIRS = petagstats pefilter pefilterpico pefiltertrad pefiltertag

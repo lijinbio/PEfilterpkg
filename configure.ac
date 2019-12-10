@@ -53,5 +53,6 @@ AC_CONFIG_FILES([
 	src/pefilterpico/Makefile
 	src/pefiltertrad/Makefile
 	src/pefilter/Makefile
+	src/pefiltertag/Makefile
 	])
 AC_OUTPUT
