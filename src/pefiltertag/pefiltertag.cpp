@@ -53,7 +53,7 @@ int parse_options(int ac, const char ** av) {
 			("pico,p", "Pico library preparation protocol. Default: traditional protocol.")
 			("statsonly,s", "Report PE tag statistics only but not generate filtered BAM file. The statitics will show in stdout.")
 			("numthreads,t", value<int>()->default_value(1), "Number of threads. Ensure enough memory for many threads. Default: 1.")
-			("validtag,d", value< vector< string > >()->multitoken(), "Valid tag pair in the format as `tag1,tag2` for two ends. `N` means mapping not found. Tag pairs can be specified multiple times. For example, `-d ++,+- -d -+,--`")
+			("validtag,d", value< vector< string > >()->multitoken(), "Valid tag pair in the format as `tag1,tag2` for two ends. `N` means mapping not found. Multiple tag pairs can be specified. For example, `-d ++,+- -d -+,--`")
 			;
 
 		variables_map vm;
