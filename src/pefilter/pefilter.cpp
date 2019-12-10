@@ -54,7 +54,7 @@ int parse_options(int ac, const char ** av) {
 		notify(vm);
 
 		if (vm.count("help")) {
-			std::cout << desc << endl;
+			cout << desc << endl;
 			exit(1);
 		}
 
@@ -77,15 +77,17 @@ int parse_options(int ac, const char ** av) {
 		}
 		if (opts.infile.empty()) {
 			cerr << "Error: -i|--infile must be specified." << endl;
+			cout << desc << endl;
 			exit(1);
 		}
 		if (opts.outfile.empty() && !opts.statsonly) {
 			cerr << "Error: -o|--outfile must be specified." << endl;
+			cout << desc << endl;
 			exit(1);
 		}
 		opts.out();
 	} catch (const error &ex) {
-		std::cerr << ex.what() << endl;
+		cerr << ex.what() << endl;
 	}
 	return 0;
 }
