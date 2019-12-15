@@ -233,6 +233,84 @@ int petagstats(string bamfile)
 	return 0;
 }
 
+void estimatelibtype(string & infile) {
+	if (opts.validtags.empty()) {
+		map< string, vector< string > > read2tagtop; // qname->[tag1,tag2]
+		samfile_t *in=0;
+		if ((in=samopen(infile.c_str(), "rb", 0))==0) {
+			cerr << "Error: not found " << infile << endl;
+			return;
+		}
+		int r=0;
+		int count=0;
+		bam1_t *b=bam_init1();
+		while (count<1000000 && (r=samread(in, b))>=0) {
+			uint32_t flag=b->core.flag;
+			if (flag & 0x100) continue;
+			string qname=string((char*)bam1_qname(b));
+			string zs=string((char *)bam_aux2Z(bam_aux_get(b, "ZS")));
+			map< string, vector< string > > :: iterator it=read2tagtop.find(qname);
+			if (read2tagtop.end()!=it) {
+				if (flag & 0x40) {
+					it->second[0]=zs;
+				} else if (flag & 0x80) {
+					it->second[1]=zs;
+				}
+			} else {
+				vector< string > tag(2, "N");
+				if (flag & 0x40) {
+					tag[0]=zs;
+				} else if (flag & 0x80) {
+					tag[1]=zs;
+				}
+				read2tagtop[qname]=tag;
+			}
+			count++;
+		}
+		samclose(in);
+
+		map< string, int > tagstatstop; // tag->number
+		for (map< string, vector< string > > :: iterator it=read2tagtop.begin(); read2tagtop.end()!=it; ++it) {
+			string tag=it->second[0] + "," + it->second[1];
+			map< string, int > :: iterator tit=tagstatstop.find(tag);
+			if (tagstatstop.end()!=tit) {
+				tit->second++;
+			} else {
+				tagstatstop[tag]=1;
+			}
+		}
+		read2tagtop.clear();
+
+		bool detectpico=false;
+		if ((tagstatstop.end()!=tagstatstop.find("++,+-")
+					&& tagstatstop.end()!=tagstatstop.find("+-,++")
+					&& tagstatstop["++,+-"]<10*tagstatstop["+-,++"]
+					&& tagstatstop["+-,++"]<10*tagstatstop["++,+-"])
+				|| (tagstatstop.end()!=tagstatstop.find("-+,--")
+					&& tagstatstop.end()!=tagstatstop.find("--,-+")
+					&& tagstatstop["-+,--"]<10*tagstatstop["--,-+"]
+					&& tagstatstop["--,-+"]<10*tagstatstop["-+,--"]
+					))
+		{
+			detectpico=true;
+		}
+
+		cout << "Number of PE tags in first 1 million mappings:" << endl;
+		for (map< string, int > :: iterator it=tagstatstop.begin(); tagstatstop.end()!=it; ++it) {
+			cout << it->first << "\t" << it->second << endl;
+		}
+		if (detectpico) {
+			cout << "Pico library construction detected. Retain 12 PE mapping pairs:\n(++,+-), (+-,++), (-+,--), (--,-+), (++,N), (N,++), (+-,N), (N,+-), (-+,N), (N,-+), (--,N), (N,--)" << endl;
+		} else {
+			cout << "Traditional library construction detected. Retain 6 PE mapping pairs:\n(++,+-), (-+,--), (++,N), (N,+-), (-+,N), (N,--)" << endl;
+		}
+
+		opts.pico=detectpico;
+	} else {
+		cout << "Using cusomized PE tags" << endl;
+	}
+}
+
 // Six true PE mappings in traditional library preparation:
 set< string > validtags_trad {
 	"++,+-", "-+,--"
@@ -460,6 +538,7 @@ int main(int argc, const char ** argv)
 	if (opts.statsonly) {
 		petagstats(opts.infile);
 	} else {
+		estimatelibtype(opts.infile);
 		pefilter(opts.infile, opts.outfile);
 	}
 	return 0;
