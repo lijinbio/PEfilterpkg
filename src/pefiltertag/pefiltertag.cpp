@@ -7,7 +7,6 @@
 #include <iterator>
 #include <thread>
 #include <cstdio>
-#include <ctime>
 #include "sam.h"
 
 using namespace boost::program_options;
@@ -66,9 +65,7 @@ int parse_options(int ac, const char ** av) {
 			cout << "Examples: " <<endl;
 			cout << "  " << av[0] << " -i in.bam -o out.bam -t 4" << endl;
 			cout << "  " << av[0] << " -i in.bam -s -t 4" << endl;
-			time_t ttime=time(0);
-			tm *local_time=localtime(&ttime);
-			cout << "Date: " << 1900+local_time->tm_year << "/" << 1+local_time->tm_mon << "/" << local_time->tm_mday << endl;
+			cout << "Date: 2019/12/15" << endl;
 			cout << "Authors: Jin Li <lijin.abc@gmail.com>" << endl;
 			exit(1);
 		}
