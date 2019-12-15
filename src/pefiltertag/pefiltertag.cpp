@@ -7,6 +7,7 @@
 #include <iterator>
 #include <thread>
 #include <cstdio>
+#include <ctime>
 #include "sam.h"
 
 using namespace boost::program_options;
@@ -47,7 +48,7 @@ int parse_options(int ac, const char ** av) {
 	{
 		options_description desc{"Allowed options"};
 		desc.add_options()
-			("help,h", "Produce help message. Example command:\npefilter -i in.bam -o out.bam\npefilter -i in.bam -p -s")
+			("help,h", "Produce help message.")
 			("infile,i", value<string>()->default_value(""), "Input BAM file. It should be indexed.")
 			("outfile,o", value<string>()->default_value(""), "Output BAM file. To save the filtered BAM file.")
 			("pico,p", "Pico library preparation protocol. Default: traditional protocol.")
@@ -62,6 +63,13 @@ int parse_options(int ac, const char ** av) {
 
 		if (vm.count("help")) {
 			cout << desc << endl;
+			cout << "Examples: " <<endl;
+			cout << "  " << av[0] << " -i in.bam -o out.bam -t 4" << endl;
+			cout << "  " << av[0] << " -i in.bam -s -t 4" << endl;
+			time_t ttime=time(0);
+			tm *local_time=localtime(&ttime);
+			cout << "Date: " << 1900+local_time->tm_year << "/" << 1+local_time->tm_mon << "/" << local_time->tm_mday << endl;
+			cout << "Authors: Jin Li <lijin.abc@gmail.com>" << endl;
 			exit(1);
 		}
 
