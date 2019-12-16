@@ -238,6 +238,39 @@ int petagstats(string bamfile)
 	return 0;
 }
 
+void calpostiverate(map< string, int > & tagstats, bool pico, int & total, int & postivenumber) {
+	total=0;
+	postivenumber=0;
+	for(map< string, int > :: iterator it=tagstats.begin(); it!=tagstats.end(); ++it) {
+		total += it->second;
+	}
+	if (pico) {
+		vector < string > picotags {
+			"++,+-", "+-,++", "-+,--", "--,-+"
+				, "++,N", "N,++", "+-,N", "N,+-"
+				, "-+,N", "N,-+", "--,N", "N,--"
+		};
+		for (string &tag : picotags) {
+			map< string, int > :: iterator it=tagstats.find(tag);
+			if (tagstats.end()!=it) {
+				postivenumber+=it->second;
+			}
+		}
+	} else {
+		vector < string > tradtags {
+			"++,+-", "-+,--"
+				, "++,N", "N,+-"
+				, "-+,N", "N,--"
+		};
+		for (string &tag : tradtags) {
+			map< string, int > :: iterator it=tagstats.find(tag);
+			if (tagstats.end()!=it) {
+				postivenumber+=it->second;
+			}
+		}
+	}
+}
+
 void estimatelibtype(string & infile) {
 	if (opts.validtags.empty()) {
 		map< string, vector< string > > read2tagtop; // qname->[tag1,tag2]
@@ -304,12 +337,20 @@ void estimatelibtype(string & infile) {
 		for (map< string, int > :: iterator it=tagstatstop.begin(); tagstatstop.end()!=it; ++it) {
 			cout << it->first << "\t" << it->second << endl;
 		}
+
+		int total=0;
+		int postivenumber=0;
+		calpostiverate(tagstatstop, detectpico, total, postivenumber);
+		cout << "total reads: " << total << "; positive reads: " << postivenumber << endl;
+		if (total>0) {
+			cout << "Positive rate: " << 1.0*postivenumber/total << endl;
+		}
+
 		if (detectpico) {
 			cout << "Pico library construction detected. Retain 12 PE mapping pairs:\n(++,+-), (+-,++), (-+,--), (--,-+), (++,N), (N,++), (+-,N), (N,+-), (-+,N), (N,-+), (--,N), (N,--)" << endl;
 		} else {
 			cout << "Traditional library construction detected. Retain 6 PE mapping pairs:\n(++,+-), (-+,--), (++,N), (N,+-), (-+,N), (N,--)" << endl;
 		}
-
 		opts.pico=detectpico;
 	} else {
 		cout << "Using cusomized PE tags" << endl;
@@ -533,6 +574,14 @@ int pefilter(string bamfile, string outfile)
 	}
 	for (map< string, int > :: iterator it=tagsresult.begin(); tagsresult.end()!=it; ++it) {
 		cout << it->first << "\t" << it->second << endl;
+	}
+
+	int total=0;
+	int postivenumber=0;
+	calpostiverate(tagsresult, opts.pico, total, postivenumber);
+	cout << "total reads: " << total << "; positive reads: " << postivenumber << endl;
+	if (total>0) {
+		cout << "Positive rate: " << 1.0*postivenumber/total << endl;
 	}
 	return 0;
 }
