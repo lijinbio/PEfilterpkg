@@ -65,6 +65,7 @@ int parse_options(int ac, const char ** av) {
 			cout << "Examples: " <<endl;
 			cout << "  " << av[0] << " -i in.bam -o out.bam -t 4" << endl;
 			cout << "  " << av[0] << " -i in.bam -s -t 4" << endl;
+			cout << endl;
 			cout << "Date: 2019/12/15" << endl;
 			cout << "Authors: Jin Li <lijin.abc@gmail.com>" << endl;
 			exit(1);
