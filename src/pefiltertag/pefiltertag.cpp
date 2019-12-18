@@ -344,7 +344,8 @@ void estimatelibtype(string & infile) {
 		calpostiverate(tagstatstop, detectpico, total, postivenumber);
 		cout << "total reads: " << total << "; positive reads: " << postivenumber << endl;
 		if (total>0) {
-			cout << "Positive rate: " << 1.0*postivenumber/total << endl;
+			double rate=1.0*postivenumber/total;
+			cout << "Positive rate: " << rate << endl;
 		}
 
 		if (detectpico) {
@@ -583,7 +584,8 @@ int pefilter(string bamfile, string outfile)
 		calpostiverate(tagsresult, opts.pico, total, postivenumber);
 		cout << "total reads: " << total << "; positive reads: " << postivenumber << endl;
 		if (total>0) {
-			cout << "Positive rate: " << 1.0*postivenumber/total << endl;
+			double rate=1.0*postivenumber/total;
+			cout << "Positive rate: " << rate << endl;
 		}
 	}
 	return 0;
