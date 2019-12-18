@@ -577,12 +577,14 @@ int pefilter(string bamfile, string outfile)
 		cout << it->first << "\t" << it->second << endl;
 	}
 
-	int total=0;
-	int postivenumber=0;
-	calpostiverate(tagsresult, opts.pico, total, postivenumber);
-	cout << "total reads: " << total << "; positive reads: " << postivenumber << endl;
-	if (total>0) {
-		cout << "Positive rate: " << 1.0*postivenumber/total << endl;
+	if (opts.validtags.empty()) { // Positive rate is not meaningful for customized tags
+		int total=0;
+		int postivenumber=0;
+		calpostiverate(tagsresult, opts.pico, total, postivenumber);
+		cout << "total reads: " << total << "; positive reads: " << postivenumber << endl;
+		if (total>0) {
+			cout << "Positive rate: " << 1.0*postivenumber/total << endl;
+		}
 	}
 	return 0;
 }
